@@ -185,7 +185,8 @@ $Button_Start.Add_Click({
 
 #$Button_Start.Add_Click({ Benchmark-Time })
 
-$TimerAverage = @()
+$script:TimerAverage = @()
+$script:CompletedLaunch = $null
 
 #Function to open a popup window to display all running windows and give Name and Title
 function Get-windows{
@@ -260,76 +261,12 @@ Function Get-Window{
 
 }
 
-#Function that returns true if the selected window is not seen running in the Process list 
-Function Get-RefranceWindow {
-
-    $SelectedWindow = $TextBox_WindowName.text
-    $CurrentWindows = Get-Process | Where-Object { $_.MainWindowTitle } | Select-Object -Property MainWindowTitle
-
-    if ($CurrentWindows.MainWindowTitle -notcontains $SelectedWindow){
-
-        return $true
-
-    }
-    else{
-        return $false
-    }
-
-}
-
-
-
 #starts a loop waiting for window to appear and writes to log file
-Function Start-TimerLoop {
 
-    $StopWatch = New-Object System.Diagnostics.Stopwatch
-
-    While (Get-RefranceWindow){
-
-        $StopWatch.Start()
-
-    }
-
-    $StopWatch.Stop()
-
-
-    $StopWatchResult = $StopWatch.Elapsed | Select-Object -ExpandProperty TotalSeconds
-    Add-Content "$LogFile" "$StopWatchResult"
-    $script:TimerAverage += $StopWatchResult
-
-    $StopWatch.reset()
-
-
-}
-
-Function Timeout-Timer {
-
-    $TimeoutTimer = New-Object System.Diagnostics.Stopwatch
-
-    $Time = $TextBox_Timeout.text
-
-    $TimeoutTimer.start()
-    $UselessCount = 0
-    while($TimeoutTimer.Elapsed.TotalSeconds -le $Time){
-
-    if (Get-RefranceWindow){
-        return
-    }
-    $UselessCount++
-
-    }
-    get-job | Stop-Job
-    get-job | Remove-Job
-
-    $OUTPUT = (new-object -ComObject wscript.shell).Popup("Application Timed Out", 0, "Error", 0x0)
-
-    Break
-    
-
-}
 
 #Launches the Application entered into the Window with any Arguments entered
 Function Lunch-Application {
+
     $Application = $TextBox_Application.text
     $Application = "`"$Application`""
 
@@ -344,9 +281,9 @@ Function Lunch-Application {
         
 
      }
-     $Get = get-job -Name
-     write-host "Launch $Get"
+
 }
+
 
 #Kills the selected application by Window Name
 Function Kill-Application {
@@ -355,23 +292,90 @@ Function Kill-Application {
     if ($Null -ne $SelectedWindow){
     get-process | where-object {$_.MainWindowTitle -eq $SelectedWindow} | stop-process
     }
+    write-host "Killing App"
 }
 
 Function Benchmark-Time {
     
+    #starts a loop waiting for window to appear and writes to log file
+    Function Start-TimerLoop {
+
+        #Function that returns true if the selected window is not seen running in the Process list 
+            Function Get-ReferenceWindow {
+
+                $SelectedWindow = $TextBox_WindowName.text
+                $CurrentWindows = Get-Process | Where-Object { $_.MainWindowTitle } | Select-Object -Property MainWindowTitle
+
+                if ($CurrentWindows.MainWindowTitle -notcontains $SelectedWindow){
+
+                    return $true
+
+                }
+                else{
+                    return $false
+                }
+
+            }
+        
+
+        $StopWatch = New-Object System.Diagnostics.Stopwatch
+
+            if($TextBox_Timeout.text.Length -ge 0 -or $TextBox_Timeout.text -gt 0){
+                $TimeoutTimer = New-Object System.Diagnostics.Stopwatch
+                $Time = $TextBox_Timeout.text
+                $TimeoutTimer.start()
+                $startTimout = $True
+            }
+            else{
+                $startTimout = $false   
+            }
+
+            While (Get-ReferenceWindow){
+
+            $StopWatch.Start()
+
+            
+                if($TimeoutTimer.Elapsed.TotalSeconds -ge $Time -and $startTimout -eq $True){
+                    write-host "Timed out, Breaking"
+
+                    $TimeoutTimer.Stop()
+                    $StopWatch.Stop()
+
+                    $OUTPUT = (new-object -ComObject wscript.shell).Popup("Application Timed Out", 0, "Error", 0x0)
+
+                return $false
+                
+            }
+        }
+        $StopwatchElapsed = $StopWatch.Elapsed
+        write-host "Application Start time: $StopwatchElapsed"
+        $StopWatch.Stop()
+
+        $StopWatchResult = $StopWatch.Elapsed | Select-Object -ExpandProperty TotalSeconds
+        Add-Content "$LogFile" "$StopWatchResult"
+        $script:TimerAverage += $StopWatchResult
+
+        $StopWatch.reset()
+
+        return $true
+
+    }
+
+
     $SelectedWindow = $TextBox_WindowName.text
     $LogFile = $TextBox_Results.text
-    if ($null -eq $LogFile){
-        $LogFile = "C:\Temp\ApplicationTimer.txt"
-    }
+    $script:CompletedLaunch = $false
+        if ($null -eq $LogFile){
+            $LogFile = "C:\Temp\ApplicationTimer.txt"
+        }
     $Iterations = $TextBox_Iterations.text
-    if ($Null -eq $Iterations){
-        $Iterations = 1
-    }
+        if ($Null -eq $Iterations){
+            $Iterations = 1
+        }
     $Delay = $TextBox_Delay.text
-    if ($Null -eq $Delay){
-        $Delay = 0
-    }
+        if ($Null -eq $Delay){
+            $Delay = 0
+        }
 
     Add-Content "$LogFile" "$SelectedWindow"
 
@@ -383,21 +387,27 @@ Function Benchmark-Time {
         #update the progress bar
         $ProgressBar1.Value = $pct1  
 
-       $launch = Lunch-Application
-      # $Timeout = Timeout-Timer
+        $launch = Lunch-Application
         #Lunch-Application
-        Start-Job -ScriptBlock{ $launch } | Wait-Job | Receive-Job 
-        #Start-Job -ScriptBlock {$Timeout} | Receive-Job
-        Start-TimerLoop
-        Timeout-Timer
-        #Lunch-Application
-        Kill-Application
-        $i++
-        start-sleep -Milliseconds $Delay
+        Start-Job -ScriptBlock{ $launch } | wait-job | Receive-Job
+        
+            if(Start-TimerLoop -eq $false){
+                write-host "return false and passing to break"
+                break
+            }
+            else{
 
+            Kill-Application
+
+
+            $i++
+            start-sleep -Milliseconds $Delay
+            }
     }
-    $TimerAverage = $TimerAverage | Measure-Object -Average
-    Add-Content "$LogFile" "$TimerAverage"
+    
+    $script:TimerAverage = $script:TimerAverage | Measure-Object -Average
+    Add-Content "$LogFile" "$script:TimerAverage"
+    write-host "Final Break"
     $ProgressBar1.Value = 0
     Kill-Application
 }
@@ -413,3 +423,4 @@ $consolePtr = [Console.Window]::GetConsoleWindow()
 [Console.Window]::ShowWindow($consolePtr, 0)
 
 [void]$AppLaunchTimer.ShowDialog()
+Export-ModuleMember -Variable 'null'
