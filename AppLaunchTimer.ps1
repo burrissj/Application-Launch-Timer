@@ -76,10 +76,8 @@ namespace System
 "@
 Add-Type -TypeDefinition $code -ReferencedAssemblies System.Drawing
 
-$mypath = $MyInvocation.MyCommand.Path
-
 # Extract PowerShell Icon from PowerShell Exe
-$iconPS   = [Drawing.Icon]::ExtractAssociatedIcon($mypath)
+#$iconPS   = [Drawing.Icon]::ExtractAssociatedIcon((Get-Command powershell).Path)
 
 # Main ToolStrip
 [void]$mainForm.Controls.Add($mainToolStrip)
@@ -128,9 +126,9 @@ function About {
     $aboutForm.Add_Load($aboutForm_Load)
 
     # About PictureBox
-    $aboutFormImage.Image    = $iconPS.ToBitmap()
+    $aboutFormImage.Image    = [System.Drawing.Icon]::FromHandle((New-Object System.Drawing.Bitmap -Argument $stream).GetHIcon())
     $aboutFormImage.Location = "55, 15"
-    $aboutFormImage.Size     = "32, 32"
+    $aboutFormImage.Size     = "64, 64"
     $aboutFormImage.SizeMode = "StretchImage"
     $aboutForm.Controls.Add($aboutFormImage)
 
@@ -144,7 +142,7 @@ function About {
     # About Text Label
     $aboutFormText.Location = "100, 40"
     $aboutFormText.Size     = "400, 30"
-    $aboutFormText.Text     = "                               John Burriss `nhttps://github.com/burrissj/Application-Launch-Timer"
+    $aboutFormText.Text     = "                               John Burriss `n        https://github.com/burrissj/Application-Launch-Timer"
     $aboutForm.Controls.Add($aboutFormText)
 
     # About Exit Button
